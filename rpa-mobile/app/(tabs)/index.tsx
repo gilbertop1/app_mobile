@@ -7,6 +7,8 @@ import {
   StyleSheet,
   Alert,
 } from "react-native";
+import { useEffect } from "react";
+
 
 const API_URL = "http://192.168.100.219:8000";
 
@@ -16,11 +18,44 @@ type Plataformas = {
   amazon: string | null;
 };
 
+
 export default function App() {
   const [spotifyUrl, setSpotifyUrl] = useState("");
   const [plataformas, setPlataformas] = useState<Plataformas | null>(null);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [polling, setPolling] = useState(false);
+
+  useEffect(() => {
+    if (!polling || !jobId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_URL}/status/${jobId}`);
+        const data = await res.json();
+
+        console.log("STATUS:", data);
+
+        if (data.status === "DONE") {
+          setStatus("✅ Descarga completada");
+          setPolling(false);
+          clearInterval(interval);
+        }
+
+        if (data.status === "ERROR") {
+          setStatus("❌ Error: " + data.error);
+          setPolling(false);
+          clearInterval(interval);
+        }
+
+      } catch (e) {
+        setStatus("⚠️ Error consultando estado");
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [polling, jobId]);
 
   const buscarPlataformas = async () => {
     if (!spotifyUrl) {
@@ -54,23 +89,26 @@ export default function App() {
 
   const descargarDesdePlataforma = async (urlPlataforma: string) => {
     setLoading(true);
-    setStatus("⬇️ Descargando, no cierres la app...");
-    
+    setStatus("🚀 Iniciando descarga...");
+
     try {
       const res = await fetch(`${API_URL}/download`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: urlPlataforma }),
       });
 
       const data = await res.json();
 
-      if (data.status === "ok") {
-        setStatus("✅ Descarga completada");
+      console.log("DOWNLOAD RESPONSE:", data);
+
+      // ✅ AQUÍ está la diferencia
+      if (data.status === "started" && data.job_id) {
+        setJobId(data.job_id);
+        setStatus("⬇️ Descargando...");
+        setPolling(true);
       } else {
-        setStatus("⚠️ Error durante la descarga");
+        setStatus("❌ No se pudo iniciar la descarga");
       }
 
     } catch (err) {
@@ -79,6 +117,7 @@ export default function App() {
       setLoading(false);
     }
   };
+
 
 
   return (
